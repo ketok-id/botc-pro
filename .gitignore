@@ -1,0 +1,32 @@
+node_modules/
+dist/
+out/
+build/icons/*.iconset
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor / AI-assistant workspace configs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/
+.cursor/
+.aider*
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Electron / packaging caches
+.electron-cache/
+.electron-builder-cache/
+
+# Coverage / test artefacts
+coverage/
+.nyc_output/

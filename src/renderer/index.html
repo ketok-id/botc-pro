@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>BOTC Pro</title>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src *; script-src 'self';" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🕰️</span>
+      <span>BOTC Pro</span>
+      <span class="sub">Blood on the Clocktower — fan desktop client</span>
+    </div>
+    <div class="panel-toggles" id="panelToggles">
+      <button id="toggleLeft"  type="button" title="Toggle status / role / voice / chat panel">☰ Info</button>
+      <button id="toggleRight" type="button" title="Toggle script &amp; log panel">Script ☰</button>
+    </div>
+    <div class="conn" id="conn">
+      <span id="connState" class="pill pill-off">disconnected</span>
+      <span id="roomCode" class="pill hidden"></span>
+      <button id="btnLeaveRoom" class="icon-btn danger hidden" type="button" title="Leave this room">Leave</button>
+      <button id="btnSettings" class="icon-btn" type="button" title="Settings (audio &amp; microphone)" aria-label="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <main id="screen">
+    <!-- Lobby screen -->
+    <section id="lobby" class="screen lobby">
+      <div class="panel">
+        <h1>Play Blood on the Clocktower</h1>
+        <p class="muted">Unofficial desktop client for LAN and hosted play.
+           Trouble Brewing script included; 5–15 players.</p>
+
+        <div class="tabs">
+          <button data-tab="host" class="tab active">Host LAN</button>
+          <button data-tab="join" class="tab">Join</button>
+          <button data-tab="relay" class="tab">Remote Server</button>
+        </div>
+
+        <!-- Host tab -->
+        <div class="tabbody" data-tab="host">
+          <label>Your name (Storyteller)
+            <input id="hostName" type="text" placeholder="e.g. aji" />
+          </label>
+          <label>Port
+            <input id="hostPort" type="number" value="7878" min="0" max="65535" />
+          </label>
+          <button id="btnHost" class="primary">Start server &amp; host room</button>
+          <div id="hostInfo" class="hostinfo hidden"></div>
+        </div>
+
+        <!-- Join tab -->
+        <div class="tabbody hidden" data-tab="join">
+          <label>Your name
+            <input id="joinName" type="text" placeholder="e.g. player1" />
+          </label>
+          <label>Host address
+            <input id="joinHost" type="text" placeholder="192.168.1.23:7878" />
+          </label>
+          <label>Room code
+            <input id="joinCode" type="text" placeholder="e.g. K3P9Q" maxlength="5" />
+          </label>
+          <button id="btnJoin" class="primary">Join room</button>
+        </div>
+
+        <!-- Relay tab -->
+        <div class="tabbody hidden" data-tab="relay">
+          <p class="muted">Connect to any <code>ws://host:port</code> or <code>wss://…</code>
+             address. You can deploy the same server (<code>node src/main/server-standalone.js</code>)
+             on a VPS or use a friend's LAN host via port-forwarding or a tunnel.</p>
+          <label>Your name
+            <input id="relayName" type="text" placeholder="e.g. aji" />
+          </label>
+          <label>Server URL
+            <input id="relayUrl" type="text" placeholder="wss://botc.example.com" />
+          </label>
+          <label>Room code (leave blank to create new)
+            <input id="relayCode" type="text" placeholder="optional" maxlength="5" />
+          </label>
+          <button id="btnRelayHost" class="primary">Create room on server</button>
+          <button id="btnRelayJoin">Join existing room</button>
+        </div>
+      </div>
+
+      <div class="panel side">
+        <h3>Quick reference</h3>
+        <ul class="ref">
+          <li><b>Good</b> wins if the Demon is dead and no Minion can become the Demon.</li>
+          <li><b>Evil</b> wins when only 2 players remain alive and one is the Demon.</li>
+          <li>The <b>Storyteller</b> runs the night phase, delivers info, and resolves deaths.</li>
+          <li>Dead players keep a single <b>ghost vote</b> for the rest of the game.</li>
+          <li>5–15 players supported on Trouble Brewing.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Game screen -->
+    <section id="game" class="screen game hidden"></section>
+  </main>
+
+  <!-- Startup mic-permission banner (rendered by ui-settings.js). -->
+  <div id="micBanner" class="mic-banner hidden" role="status"></div>
+
+  <!-- Settings modal -->
+  <div id="settingsOverlay" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <h2 id="settingsTitle">Settings</h2>
+        <button class="icon-btn" id="settingsClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="settingsBody"></div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <span id="appVersion" class="muted"></span>
+    <span class="muted">Unofficial fan client. Blood on the Clocktower © The Pandemonium Institute.</span>
+  </footer>
+
+  <script src="js/platform.js"></script>
+  <script src="js/client.js"></script>
+  <script src="js/voice.js"></script>
+  <script src="js/tokens.js"></script>
+  <script src="js/ui-lobby.js"></script>
+  <script src="js/ui-game.js"></script>
+  <script src="js/ui-voice.js"></script>
+  <script src="js/ui-settings.js"></script>
+  <script src="js/phase-transitions.js"></script>
+  <script src="js/almanac.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

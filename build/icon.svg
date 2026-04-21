@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#2a1f4a"/>
+      <stop offset="60%" stop-color="#14102a"/>
+      <stop offset="100%" stop-color="#05040f"/>
+    </radialGradient>
+    <radialGradient id="face" cx="50%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#f6e2a8"/>
+      <stop offset="55%" stop-color="#d4a84b"/>
+      <stop offset="100%" stop-color="#7b5a1f"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded-square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="url(#bg)"/>
+
+  <!-- Moon silhouette top-right -->
+  <circle cx="780" cy="240" r="110" fill="#e8dcc0" opacity="0.15"/>
+  <circle cx="810" cy="225" r="95"  fill="#05040f" opacity="0.9"/>
+
+  <!-- Clock face -->
+  <circle cx="512" cy="560" r="300" fill="url(#face)" stroke="#2d2238" stroke-width="18"/>
+  <circle cx="512" cy="560" r="300" fill="none" stroke="#7b5a1f" stroke-width="4"/>
+
+  <!-- Hour ticks -->
+  <g stroke="#2b1d04" stroke-width="10" stroke-linecap="round">
+    <line x1="512" y1="290" x2="512" y2="330"/>
+    <line x1="512" y1="790" x2="512" y2="830"/>
+    <line x1="242" y1="560" x2="282" y2="560"/>
+    <line x1="742" y1="560" x2="782" y2="560"/>
+    <line x1="325" y1="373" x2="353" y2="401" opacity="0.7"/>
+    <line x1="699" y1="373" x2="671" y2="401" opacity="0.7"/>
+    <line x1="325" y1="747" x2="353" y2="719" opacity="0.7"/>
+    <line x1="699" y1="747" x2="671" y2="719" opacity="0.7"/>
+  </g>
+
+  <!-- Hands pointing at midnight -->
+  <g stroke="#2b1d04" stroke-linecap="round">
+    <line x1="512" y1="560" x2="512" y2="350" stroke-width="22"/>
+    <line x1="512" y1="560" x2="512" y2="395" stroke-width="14"/>
+  </g>
+  <circle cx="512" cy="560" r="22" fill="#2b1d04"/>
+
+  <!-- Drop of blood -->
+  <g filter="url(#glow)" opacity="0.9">
+    <path d="M 680 170 C 680 210, 720 210, 720 170 C 720 145, 700 120, 700 90 C 700 120, 680 145, 680 170 Z" fill="#c7263a"/>
+  </g>
+  <path d="M 680 170 C 680 210, 720 210, 720 170 C 720 145, 700 120, 700 90 C 700 120, 680 145, 680 170 Z" fill="#e55a6a"/>
+  <ellipse cx="695" cy="140" rx="6" ry="10" fill="#ffd1d7" opacity="0.8"/>
+</svg>

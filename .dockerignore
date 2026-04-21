@@ -1,0 +1,43 @@
+# Keep Docker build context small and deterministic.
+# Anything listed here is NOT sent to the daemon during `docker build`.
+
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build / cache artefacts
+dist
+out
+.vite
+.webpack
+.electron-cache
+.electron-builder-cache
+
+# NOTE: src/renderer/ used to be excluded here (Electron-only assets), but
+# the standalone server now serves it over HTTP on the same port as WS so
+# browser clients can play without installing the desktop app. Keep it in
+# the build context.
+
+# VCS / IDE / OS noise
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# Docs that aren't needed at runtime
+*.md
+!README.md
+
+# This file itself + compose
+.dockerignore
+docker-compose*.yml
+docker/

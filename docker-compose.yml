@@ -1,0 +1,139 @@
+name: botc-pro
+
+services:
+  # --- BOTC game + signaling server ----------------------------------------
+  # The Electron desktop client connects to ws://<host>:7878 (or wss:// behind
+  # a TLS proxy). This service handles rooms, game state, chat, and WebRTC
+  # signaling relay. It does NOT relay audio bytes — audio is peer-to-peer.
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: botc-pro/server:latest
+    container_name: botc-server
+    restart: unless-stopped
+    environment:
+      PORT: "7878"
+      BIND: "0.0.0.0"
+      NODE_ENV: "production"
+    ports:
+      - "${BOTC_PORT:-7878}:7878"
+    networks:
+      - botc
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(7878,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # --- Optional: coturn TURN server for WebRTC voice ----------------------
+  # Symmetric NATs and strict corporate firewalls will block raw P2P audio;
+  # TURN relays the media for those peers. Enable with:
+  #   cp docker/coturn/turnserver.conf.example docker/coturn/turnserver.conf
+  #   # edit realm, lt-cred-mech credentials, external-ip
+  #   docker compose --profile turn up -d
+  #
+  # Then add a TURN entry to RTC_CONFIG.iceServers in src/renderer/js/voice.js.
+  coturn:
+    image: coturn/coturn:latest
+    container_name: botc-coturn
+    restart: unless-stopped
+    profiles: ["turn"]
+    network_mode: host          # TURN needs raw UDP on many ephemeral ports
+    volumes:
+      - ./docker/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+  # --- Optional: Caddy TLS reverse proxy ----------------------------------
+  # Wraps the BOTC WS server in automatic HTTPS. Enable with:
+  #   BOTC_DOMAIN=botc.example.com docker compose --profile tls up -d
+  # and point your DNS A record at this machine on 80/443.
+  caddy:
+    image: caddy:2-alpine
+    container_name: botc-caddy
+    restart: unless-stopped
+    profiles: ["tls"]
+    depends_on:
+      - server
+    environment:
+      BOTC_DOMAIN: "${BOTC_DOMAIN:-}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - botc
+
+  # --- Optional: Cloudflare Tunnel ----------------------------------------
+  # Exposes the BOTC server to the public internet via an outbound-only
+  # connection to Cloudflare's edge. No open ports on your home router, no
+  # static IP needed, works behind CGNAT, automatic TLS.
+  #
+  # Two modes:
+  #
+  #   A) NAMED TUNNEL  (permanent URL on a domain you control) -- profile: tunnel
+  #        1. On the Cloudflare Zero Trust dashboard create a tunnel,
+  #           copy the tunnel token.
+  #        2. In that tunnel's route config add a public hostname:
+  #             Service:   HTTP  server:7878
+  #             Hostname:  botc.yourdomain.com  (a zone you own on Cloudflare)
+  #        3. Put the token in a .env file next to this compose file:
+  #             CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoi...
+  #        4. docker compose --profile tunnel up -d
+  #      Clients connect with wss://botc.yourdomain.com — stable across restarts.
+  #
+  #   B) QUICK TUNNEL  (zero-config, ephemeral URL) -- profile: tunnel-quick
+  #        docker compose --profile tunnel-quick up -d
+  #        docker compose logs -f cloudflared-quick
+  #        # look for https://*.trycloudflare.com in the logs
+  #      Random URL each restart. Good for one-off games or testing.
+  #
+  # Note: the cloudflare/cloudflared image is distroless (no /bin/sh), so we
+  # invoke it with a plain arg list and let compose interpolate the token from
+  # .env at parse time. Using ${VAR:?...} makes compose refuse to start with a
+  # helpful error if the token is missing.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: botc-cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      - server
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env (copy from Cloudflare Zero Trust -> your tunnel -> install token)}
+    networks:
+      - botc
+
+  # Quick tunnel variant: no account needed, prints a random *.trycloudflare.com
+  # URL to the logs on each start. Enable with:
+  #   docker compose --profile tunnel-quick up -d
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    container_name: botc-cloudflared-quick
+    restart: unless-stopped
+    profiles: ["tunnel-quick"]
+    depends_on:
+      - server
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - http://server:7878
+    networks:
+      - botc
+
+networks:
+  botc:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,45 @@
+# Caddy reverse proxy for BOTC Pro.
+#
+# Enable with:
+#   BOTC_DOMAIN=botc.example.com docker compose --profile tls up -d
+#
+# Caddy will automatically provision a Let's Encrypt certificate for the
+# domain in BOTC_DOMAIN and terminate TLS, then proxy HTTP + WebSocket
+# traffic to the `server` service on port 7878. The Node server multiplexes
+# the web app (static files) and WebSocket signaling on the same port, so
+# users can either:
+#   * browse to https://botc.example.com          (web client), or
+#   * connect with the desktop app to
+#     wss://botc.example.com                       (from the Remote Server tab)
+#
+# Requirements:
+#   - BOTC_DOMAIN's A record must point at this host.
+#   - Ports 80 and 443 must be reachable from the public internet
+#     (Let's Encrypt challenges use 80; WebSocket + HTTPS traffic use 443).
+
+{$BOTC_DOMAIN} {
+	# Single pass-through for both the static web app and WebSocket upgrades.
+	# Caddy auto-detects `Upgrade: websocket` and proxies accordingly.
+	reverse_proxy server:7878 {
+		# Forward the real client IP so server-side logs are useful.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+
+		# Keep-alives matter a lot for WS — a game connection is long-lived.
+		transport http {
+			keepalive 60s
+			keepalive_idle_conns 32
+		}
+	}
+
+	encode zstd gzip
+
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+}
+
+# Optional: redirect bare HTTP to HTTPS. Caddy does this automatically when a
+# site block declares a domain, so no extra config is needed.

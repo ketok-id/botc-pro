@@ -1,0 +1,113 @@
+{
+  "name": "botc-pro",
+  "version": "0.1.0",
+  "description": "Blood on the Clocktower desktop app with LAN/hosted multiplayer rooms (fan-made, unofficial).",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node src/main/server-standalone.js",
+    "dev": "electron . --enable-logging",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder -mwl",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "test": "node test-st-qol.js",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "botc",
+    "blood-on-the-clocktower",
+    "electron",
+    "multiplayer"
+  ],
+  "author": "yudha setyaji",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/setilanaji/botc-pro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/setilanaji/botc-pro/issues"
+  },
+  "homepage": "https://github.com/setilanaji/botc-pro#readme",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "nanoid": "^3.3.7"
+  },
+  "build": {
+    "appId": "id.ketok.botcpro",
+    "productName": "BOTC Pro",
+    "copyright": "Copyright © 2026 aji. Blood on the Clocktower is © The Pandemonium Institute. Fan-made tool, not affiliated.",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/{.DS_Store,.git,.gitignore,.eslintrc,.eslintrc.js,.prettierrc}",
+      "!docker/**",
+      "!Dockerfile",
+      "!docker-compose.yml",
+      "!.dockerignore",
+      "!.env",
+      "!.env.example"
+    ],
+    "asar": true,
+    "asarUnpack": [],
+    "mac": {
+      "category": "public.app-category.games",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "dmg": {
+      "title": "BOTC Pro ${version}",
+      "contents": [
+        { "x": 140, "y": 180, "type": "file" },
+        { "x": 400, "y": 180, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BOTC Pro"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Game",
+      "synopsis": "Blood on the Clocktower desktop client",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ]
+    }
+  }
+}

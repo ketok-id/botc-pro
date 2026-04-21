@@ -1,0 +1,68 @@
+# coturn example config for BOTC Pro voice relay.
+#
+# Copy this file to turnserver.conf in the same directory, then edit:
+#   - realm            -> a domain you control (or any identifier; clients don't care)
+#   - external-ip      -> the public IPv4 of the host running this container
+#   - user             -> credentials you'll also put in RTC_CONFIG on the client
+#
+# Start with:  docker compose --profile turn up -d
+#
+# Then, on the client side, open src/renderer/js/voice.js and add a TURN entry
+# to RTC_CONFIG.iceServers, for example:
+#
+#   {
+#     urls: ["turn:turn.example.com:3478", "turn:turn.example.com:3478?transport=tcp"],
+#     username: "botc",
+#     credential: "CHANGE_ME_TO_MATCH_BELOW",
+#   }
+
+# Listen on the standard TURN ports.
+listening-port=3478
+# tls-listening-port=5349   # uncomment + provide cert/pkey below for TURNS
+
+# Bind on all interfaces; `network_mode: host` in compose means this is the host NIC.
+listening-ip=0.0.0.0
+
+# The public address clients will see on relayed candidates. REQUIRED when the
+# server sits behind NAT (most VPS hosts map a public IP to a private NIC).
+# Replace with your actual public IPv4.
+external-ip=203.0.113.10
+
+# Relay range — open this whole UDP range on your firewall / security group.
+# Narrower ranges reduce attack surface but must stay >= ~50 ports for a few games.
+min-port=49152
+max-port=49252
+
+# Long-term credentials (simplest mode; clients send user+credential in the ICE entry).
+lt-cred-mech
+realm=botc.example.com
+user=botc:CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+
+# Reasonable defaults.
+fingerprint
+no-tlsv1
+no-tlsv1_1
+no-stdout-log
+log-file=stdout
+simple-log
+# Uncomment for verbose signaling logs while debugging:
+# verbose
+
+# If you want TURNS (TLS-wrapped TURN, recommended for restrictive corporate networks),
+# mount a cert and key into the container and uncomment:
+# cert=/etc/coturn/cert.pem
+# pkey=/etc/coturn/privkey.pem
+
+# Drop dangerous relays to private / link-local ranges so the server can't be
+# abused as an open proxy into your LAN.
+no-loopback-peers
+no-multicast-peers
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=::1
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff

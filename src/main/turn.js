@@ -15,6 +15,10 @@
 
 const API_BASE = 'https://rtc.live.cloudflare.com/v1/turn/keys';
 const REFRESH_MARGIN_MS = 10 * 60 * 1000; // refresh 10 min before expiry
+// Connection-setup blocks on this mint, so a hung fetch would hang the
+// client's initial WELCOME. 3s is plenty for Cloudflare's API and keeps
+// the worst case well under user-perceptible latency.
+const MINT_TIMEOUT_MS = 3000;
 
 let cache = null; // { iceServers, expiresAt }
 let inflight = null;
@@ -35,6 +39,7 @@ async function mint() {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ ttl }),
+    signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');

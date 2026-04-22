@@ -196,20 +196,32 @@
       if (!this.localStream) return; // need a mic before we can negotiate
 
       for (const [pid, chs] of peerChannels) {
-        const sig = this._peerSignature(pid, chs);
-        if (this.peers.has(pid) && this.peerSig.get(pid) === sig) continue;
+        const oldSig = this.peerSig.get(pid);
+        const newSig = this._peerSignature(pid, chs);
+        if (this.peers.has(pid) && oldSig === newSig) continue;
         // Existing PC has a stale signature (e.g. ST just opened a whisper,
         // which flips us from listener-only to also-speaker). Tear it down and
         // reopen — simpler and more reliable than mid-call renegotiation.
         const rebuilding = this.peers.has(pid);
+
+        // Decide who initiates after the rebuild:
+        //   - Channel-set change: both sides received the same voice_channels
+        //     broadcast and both reconcile, so use the deterministic polite-
+        //     peer rule (me < pid) to avoid glare. Forcing initiator=true on
+        //     both sides here used to leave two half-negotiated PCs whose
+        //     offers and answers were delivered to the wrong peer objects —
+        //     the exact whisper-opening failure mode on the web.
+        //   - Mic-only flip (L↔S, channel set unchanged): only the local side
+        //     sees this change, so we have to initiate ourselves; the remote's
+        //     _onSignal offer path will drive its rebuild.
+        const oldChs = oldSig ? oldSig.split('|')[0] : '';
+        const newChs = newSig.split('|')[0];
+        const micOnlyRebuild = rebuilding && oldChs === newChs;
+
         if (rebuilding) this._closePeer(pid);
-        this.peerSig.set(pid, sig);
-        // On fresh creation use the deterministic polite-peer rule (me < pid)
-        // so both sides don't both offer. On REBUILD, the side that detected
-        // the state change must initiate — the remote still has its stale PC
-        // and won't know to rebuild on its own. _onSignal handles the
-        // tear-down on receipt of a new offer for an existing entry.
-        const initiator = rebuilding ? true : (me < pid);
+        this.peerSig.set(pid, newSig);
+
+        const initiator = micOnlyRebuild ? true : (me < pid);
         const signalingChannelId = [...chs][0]; // any shared channel satisfies server-side auth
         this._createPeer(pid, signalingChannelId, initiator)
           .catch(err => console.warn('peer err', err));
@@ -291,8 +303,13 @@
         }
       };
       pc.onconnectionstatechange = () => {
-        if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-          // Let the reconcile loop re-create it on the next channel update.
+        // 'failed' is terminal — ICE has given up. Nothing else triggers a
+        // retry (reconcile only fires on channel-roster changes), so without
+        // this the peer stays silently dead. 'disconnected' is transient and
+        // may recover; leave those alone. Ignore 'closed' (we initiated it).
+        if (pc.connectionState === 'failed') {
+          this._closePeer(peerId);
+          this._reconcilePeers().catch(err => console.warn('voice reconcile err', err));
         }
       };
 
@@ -318,6 +335,12 @@
         entry = null;
       }
       if (!entry) {
+        // Only an offer can anchor a fresh receiver PC. A stray ICE candidate
+        // or answer arriving for a peer we've already torn down would
+        // otherwise spin up a zombie non-initiator PC that waits forever for
+        // an offer that will never come (and mis-routes later ICE candidates
+        // into a PC with no remote description).
+        if (!sdp || sdp.type !== 'offer') return;
         // Remote initiated before our reconcile opened a peer; create a receiver.
         await this._createPeer(from, channelId, /*initiator=*/false);
         entry = this.peers.get(from);
@@ -339,6 +362,11 @@
       const replyChannelId = channelId || entry.signalingChannelId;
       try {
         if (sdp) {
+          // Safety net: ignore an answer that arrived for a PC which is no
+          // longer offering (e.g. we already tore it down and rebuilt as a
+          // non-initiator, or rare mic-only double-flip glare). Applying it
+          // would throw InvalidStateError: "Called in wrong state: stable".
+          if (sdp.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
           await pc.setRemoteDescription(sdp);
           if (sdp.type === 'offer') {
             const answer = await pc.createAnswer();

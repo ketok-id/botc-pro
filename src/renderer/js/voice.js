@@ -200,9 +200,15 @@
         // Existing PC has a stale signature (e.g. ST just opened a whisper,
         // which flips us from listener-only to also-speaker). Tear it down and
         // reopen — simpler and more reliable than mid-call renegotiation.
-        if (this.peers.has(pid)) this._closePeer(pid);
+        const rebuilding = this.peers.has(pid);
+        if (rebuilding) this._closePeer(pid);
         this.peerSig.set(pid, sig);
-        const initiator = me < pid; // deterministic polite peer
+        // On fresh creation use the deterministic polite-peer rule (me < pid)
+        // so both sides don't both offer. On REBUILD, the side that detected
+        // the state change must initiate — the remote still has its stale PC
+        // and won't know to rebuild on its own. _onSignal handles the
+        // tear-down on receipt of a new offer for an existing entry.
+        const initiator = rebuilding ? true : (me < pid);
         const signalingChannelId = [...chs][0]; // any shared channel satisfies server-side auth
         this._createPeer(pid, signalingChannelId, initiator)
           .catch(err => console.warn('peer err', err));
@@ -221,8 +227,14 @@
     }
 
     // Stable key that changes whenever we need to rebuild the PC to this peer.
+    // NB: mirrors what _createPeer actually does — attaches a local track only
+    // when BOTH conditions hold. If we keyed purely on channel role, a
+    // listener-only PC created before the mic was enabled would match the
+    // post-enable signature and the reconcile pass would skip the rebuild,
+    // leaving the PC silent. (This was the root cause of #5.)
     _peerSignature(peerId, sharedChannels) {
-      return [...sharedChannels].sort().join(',') + '|' + (this._canSpeakTo(peerId) ? 'S' : 'L');
+      const canSend = !!this.localStream && this._canSpeakTo(peerId);
+      return [...sharedChannels].sort().join(',') + '|' + (canSend ? 'S' : 'L');
     }
 
     _closePeer(peerId) {
@@ -295,10 +307,30 @@
 
     async _onSignal({ from, channelId, sdp, ice }) {
       let entry = this.peers.get(from);
+      // A fresh OFFER for an existing peer means the remote has torn down
+      // their old PC and rebuilt it (e.g. because their role flipped from
+      // listener to speaker). Our local PC is now stale SDP-wise; wipe it
+      // and answer with a fresh one. Also: remember the expected signature
+      // here so a later reconcile doesn't needlessly close-and-rebuild us.
+      if (entry && sdp && sdp.type === 'offer') {
+        this._closePeer(from);
+        entry = null;
+      }
       if (!entry) {
         // Remote initiated before our reconcile opened a peer; create a receiver.
         await this._createPeer(from, channelId, /*initiator=*/false);
         entry = this.peers.get(from);
+        // Seed peerSig with the PC's actual post-creation signature so a
+        // subsequent reconcile doesn't pointlessly tear this down. When the
+        // user later enables the mic, _peerSignature flips L->S for speaker
+        // channels and reconcile correctly rebuilds to attach local tracks.
+        const chs = new Set();
+        for (const chId of this.mine.channels) {
+          const ch = this.channels[chId];
+          if (!ch) continue;
+          if (ch.speakers.includes(from) || ch.listeners.includes(from)) chs.add(chId);
+        }
+        if (chs.size) this.peerSig.set(from, this._peerSignature(from, chs));
       }
       const pc = entry.pc;
       // Reuse the channelId this signal arrived on for our reply — guarantees

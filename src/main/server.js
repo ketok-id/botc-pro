@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const { nanoid, customAlphabet } = require('nanoid');
 const { C2S, S2C, PROTOCOL_VERSION, PHASES } = require('../shared/protocol');
 const engine = require('../shared/game-engine');
+const turn = require('./turn');
 
 // Static files served at `/` when a webRoot is provided. Limited to the file
 // types the renderer actually ships so we don't accidentally expose anything
@@ -105,7 +106,7 @@ function startServer({ port = 0, bind = '0.0.0.0', webRoot = null } = {}) {
     }, SERVER_PING_INTERVAL_MS);
     wss.on('close', () => clearInterval(heartbeat));
 
-    wss.on('connection', (ws, req) => {
+    wss.on('connection', async (ws, req) => {
       // A "session" is a single WebSocket. Its clientId can be RE-KEYED later
       // if the client RESUMEs an old session — so we keep it mutable here.
       const session = {
@@ -118,8 +119,12 @@ function startServer({ port = 0, bind = '0.0.0.0', webRoot = null } = {}) {
       ws.on('pong', () => { ws.isAlive = true; });
       clients.set(session.clientId, session);
 
-      send(ws, { t: S2C.WELCOME, clientId: session.clientId, version: PROTOCOL_VERSION });
-
+      // Attach message/close listeners BEFORE the async TURN mint — the
+      // `ws` library doesn't buffer messages for late listeners, so clients
+      // that send immediately after WS open (e.g. `create_room` right after
+      // connect()) would otherwise be silently dropped while mint is pending.
+      // None of the message handlers depend on WELCOME having been delivered
+      // first, so processing them early is safe.
       ws.on('message', (buf) => {
         let msg;
         try {
@@ -135,6 +140,28 @@ function startServer({ port = 0, bind = '0.0.0.0', webRoot = null } = {}) {
       ws.on('close', () => {
         handleDisconnect(session);
       });
+
+      // If Cloudflare Realtime TURN is configured, mint ephemeral creds and
+      // push them BEFORE welcome. The client is driven by voice_channels /
+      // localStream to build PCs, not by welcome directly — but sending
+      // voice_ice ahead of welcome still guarantees RTC_CONFIG is populated
+      // before any subsequent voice_channels broadcast. getIceServers() is
+      // cached and bounded by a short fetch timeout, so the added connect
+      // latency is negligible. A failure falls through to public STUN — which
+      // still works on friendly NAT / same-LAN setups.
+      if (turn.isConfigured()) {
+        try {
+          const iceServers = await turn.getIceServers();
+          if (iceServers && ws.readyState === ws.OPEN) {
+            send(ws, { t: S2C.VOICE_ICE, iceServers });
+          }
+        } catch (err) {
+          console.warn('[botc-pro] turn mint error:', err.message);
+        }
+        if (ws.readyState !== ws.OPEN) return; // client gave up while we minted
+      }
+
+      send(ws, { t: S2C.WELCOME, clientId: session.clientId, version: PROTOCOL_VERSION });
     });
 
     async function handleMessage(session, msg) {

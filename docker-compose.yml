@@ -16,6 +16,10 @@ services:
       PORT: "7878"
       BIND: "0.0.0.0"
       NODE_ENV: "production"
+      # Cloudflare Realtime TURN — optional. See .env.example.
+      CF_TURN_TOKEN_ID: "${CF_TURN_TOKEN_ID:-}"
+      CF_TURN_API_TOKEN: "${CF_TURN_API_TOKEN:-}"
+      CF_TURN_TTL: "${CF_TURN_TTL:-}"
     ports:
       - "${BOTC_PORT:-7878}:7878"
     networks:

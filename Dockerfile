@@ -37,6 +37,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src/main/server.js                    src/main/server.js
 COPY src/main/server-standalone.js         src/main/server-standalone.js
+COPY src/main/turn.js                      src/main/turn.js
 COPY src/shared/                           src/shared/
 # The standalone server serves src/renderer/ over HTTP on the same port as
 # WebSocket, so browser clients can play without installing the desktop app.

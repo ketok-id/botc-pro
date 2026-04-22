@@ -43,6 +43,7 @@
       this.client.addEventListener('voicechannels', (ev) => this._onChannels(ev.detail));
       this.client.addEventListener('voicesignal',   (ev) => this._onSignal(ev.detail));
       this.client.addEventListener('voicemic',      (ev) => this._onMic(ev.detail));
+      this.client.addEventListener('voiceice',      (ev) => this._onIce(ev.detail));
       this.client.addEventListener('close',         () => this.shutdown());
 
       this._wirePtt();
@@ -195,14 +196,32 @@
       if (!this.localStream) return; // need a mic before we can negotiate
 
       for (const [pid, chs] of peerChannels) {
-        const sig = this._peerSignature(pid, chs);
-        if (this.peers.has(pid) && this.peerSig.get(pid) === sig) continue;
+        const oldSig = this.peerSig.get(pid);
+        const newSig = this._peerSignature(pid, chs);
+        if (this.peers.has(pid) && oldSig === newSig) continue;
         // Existing PC has a stale signature (e.g. ST just opened a whisper,
         // which flips us from listener-only to also-speaker). Tear it down and
         // reopen — simpler and more reliable than mid-call renegotiation.
-        if (this.peers.has(pid)) this._closePeer(pid);
-        this.peerSig.set(pid, sig);
-        const initiator = me < pid; // deterministic polite peer
+        const rebuilding = this.peers.has(pid);
+
+        // Decide who initiates after the rebuild:
+        //   - Channel-set change: both sides received the same voice_channels
+        //     broadcast and both reconcile, so use the deterministic polite-
+        //     peer rule (me < pid) to avoid glare. Forcing initiator=true on
+        //     both sides here used to leave two half-negotiated PCs whose
+        //     offers and answers were delivered to the wrong peer objects —
+        //     the exact whisper-opening failure mode on the web.
+        //   - Mic-only flip (L↔S, channel set unchanged): only the local side
+        //     sees this change, so we have to initiate ourselves; the remote's
+        //     _onSignal offer path will drive its rebuild.
+        const oldChs = oldSig ? oldSig.split('|')[0] : '';
+        const newChs = newSig.split('|')[0];
+        const micOnlyRebuild = rebuilding && oldChs === newChs;
+
+        if (rebuilding) this._closePeer(pid);
+        this.peerSig.set(pid, newSig);
+
+        const initiator = micOnlyRebuild ? true : (me < pid);
         const signalingChannelId = [...chs][0]; // any shared channel satisfies server-side auth
         this._createPeer(pid, signalingChannelId, initiator)
           .catch(err => console.warn('peer err', err));
@@ -221,8 +240,14 @@
     }
 
     // Stable key that changes whenever we need to rebuild the PC to this peer.
+    // NB: mirrors what _createPeer actually does — attaches a local track only
+    // when BOTH conditions hold. If we keyed purely on channel role, a
+    // listener-only PC created before the mic was enabled would match the
+    // post-enable signature and the reconcile pass would skip the rebuild,
+    // leaving the PC silent. (This was the root cause of #5.)
     _peerSignature(peerId, sharedChannels) {
-      return [...sharedChannels].sort().join(',') + '|' + (this._canSpeakTo(peerId) ? 'S' : 'L');
+      const canSend = !!this.localStream && this._canSpeakTo(peerId);
+      return [...sharedChannels].sort().join(',') + '|' + (canSend ? 'S' : 'L');
     }
 
     _closePeer(peerId) {
@@ -244,12 +269,33 @@
       this.peers.set(peerId, { pc, audioEl, peerId, signalingChannelId });
 
       // Attach our mic if we can speak to this peer on ANY shared channel.
-      if (this.localStream && this._canSpeakTo(peerId)) {
+      const canSpeak = this.localStream && this._canSpeakTo(peerId);
+      if (canSpeak) {
         for (const t of this.localStream.getAudioTracks()) pc.addTrack(t, this.localStream);
+      }
+      // Always declare a recv audio transceiver. Without this, listener-only
+      // peers negotiate an SDP with no recv m-line on Safari/WebKit (the
+      // legacy `offerToReceiveAudio` flag is unreliable there), so remote
+      // audio never flows.
+      if (!canSpeak) {
+        try { pc.addTransceiver('audio', { direction: 'recvonly' }); } catch {}
       }
 
       pc.ontrack = (ev) => {
-        audioEl.srcObject = ev.streams[0];
+        // `ev.streams[0]` is empty in some unified-plan paths (notably Safari);
+        // fall back to wrapping the raw track.
+        const stream = ev.streams && ev.streams[0]
+          ? ev.streams[0]
+          : new MediaStream([ev.track]);
+        audioEl.srcObject = stream;
+        // Autoplay policies on macOS Chrome/Safari block playback on audio
+        // elements appended after the initial user gesture. The "Enable mic"
+        // click counts as a gesture, so kicking .play() here is allowed — and
+        // is what unsticks previously-silent remote streams.
+        const p = audioEl.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(err => console.warn('voice audio play blocked', err));
+        }
       };
       pc.onicecandidate = (ev) => {
         if (ev.candidate) {
@@ -257,13 +303,21 @@
         }
       };
       pc.onconnectionstatechange = () => {
-        if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-          // Let the reconcile loop re-create it on the next channel update.
+        // 'failed' is terminal — ICE has given up. Nothing else triggers a
+        // retry (reconcile only fires on channel-roster changes), so without
+        // this the peer stays silently dead. 'disconnected' is transient and
+        // may recover; leave those alone. Ignore 'closed' (we initiated it).
+        if (pc.connectionState === 'failed') {
+          this._closePeer(peerId);
+          this._reconcilePeers().catch(err => console.warn('voice reconcile err', err));
         }
       };
 
       if (initiator) {
-        const offer = await pc.createOffer({ offerToReceiveAudio: true });
+        // The recvonly transceiver (when listener-only) or the sent track
+        // (when speaker) already defines the m-line; no legacy offer options
+        // needed.
+        const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         this.client.send({ t: 'voice_signal', to: peerId, channelId: signalingChannelId, sdp: pc.localDescription });
       }
@@ -271,10 +325,36 @@
 
     async _onSignal({ from, channelId, sdp, ice }) {
       let entry = this.peers.get(from);
+      // A fresh OFFER for an existing peer means the remote has torn down
+      // their old PC and rebuilt it (e.g. because their role flipped from
+      // listener to speaker). Our local PC is now stale SDP-wise; wipe it
+      // and answer with a fresh one. Also: remember the expected signature
+      // here so a later reconcile doesn't needlessly close-and-rebuild us.
+      if (entry && sdp && sdp.type === 'offer') {
+        this._closePeer(from);
+        entry = null;
+      }
       if (!entry) {
+        // Only an offer can anchor a fresh receiver PC. A stray ICE candidate
+        // or answer arriving for a peer we've already torn down would
+        // otherwise spin up a zombie non-initiator PC that waits forever for
+        // an offer that will never come (and mis-routes later ICE candidates
+        // into a PC with no remote description).
+        if (!sdp || sdp.type !== 'offer') return;
         // Remote initiated before our reconcile opened a peer; create a receiver.
         await this._createPeer(from, channelId, /*initiator=*/false);
         entry = this.peers.get(from);
+        // Seed peerSig with the PC's actual post-creation signature so a
+        // subsequent reconcile doesn't pointlessly tear this down. When the
+        // user later enables the mic, _peerSignature flips L->S for speaker
+        // channels and reconcile correctly rebuilds to attach local tracks.
+        const chs = new Set();
+        for (const chId of this.mine.channels) {
+          const ch = this.channels[chId];
+          if (!ch) continue;
+          if (ch.speakers.includes(from) || ch.listeners.includes(from)) chs.add(chId);
+        }
+        if (chs.size) this.peerSig.set(from, this._peerSignature(from, chs));
       }
       const pc = entry.pc;
       // Reuse the channelId this signal arrived on for our reply — guarantees
@@ -282,6 +362,11 @@
       const replyChannelId = channelId || entry.signalingChannelId;
       try {
         if (sdp) {
+          // Safety net: ignore an answer that arrived for a PC which is no
+          // longer offering (e.g. we already tore it down and rebuilt as a
+          // non-initiator, or rare mic-only double-flip glare). Applying it
+          // would throw InvalidStateError: "Called in wrong state: stable".
+          if (sdp.type === 'answer' && pc.signalingState !== 'have-local-offer') return;
           await pc.setRemoteDescription(sdp);
           if (sdp.type === 'offer') {
             const answer = await pc.createAnswer();
@@ -293,6 +378,18 @@
         }
       } catch (err) {
         console.warn('voice signal error', err);
+      }
+    }
+
+    // Server-pushed ICE config (typically Cloudflare Realtime TURN). Replaces
+    // the default public-STUN list so clients behind symmetric NAT can relay.
+    // Existing peer connections keep their old config — only new/rebuilt PCs
+    // pick up the change. That's fine: reconcile rebuilds on any channel
+    // change, and no TURN is needed until a peer actually fails to connect
+    // via the current config.
+    _onIce({ iceServers }) {
+      if (Array.isArray(iceServers) && iceServers.length) {
+        RTC_CONFIG.iceServers = iceServers;
       }
     }
 
@@ -323,6 +420,7 @@
       if (msg?.t === 'voice_channels') client.dispatchEvent(new CustomEvent('voicechannels', { detail: msg }));
       else if (msg?.t === 'voice_signal') client.dispatchEvent(new CustomEvent('voicesignal', { detail: msg }));
       else if (msg?.t === 'voice_mic') client.dispatchEvent(new CustomEvent('voicemic', { detail: msg }));
+      else if (msg?.t === 'voice_ice') client.dispatchEvent(new CustomEvent('voiceice', { detail: msg }));
     };
   }
 

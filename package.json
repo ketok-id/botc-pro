@@ -1,6 +1,6 @@
 {
   "name": "botc-pro",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Blood on the Clocktower desktop app with LAN/hosted multiplayer rooms (fan-made, unofficial).",
   "main": "src/main/index.js",
   "scripts": {

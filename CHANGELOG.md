@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-22
+
 ### Added
 
+- Voice chat: Cloudflare Realtime TURN support as an alternative to coturn,
+  so hosts without a public IP can still relay WebRTC traffic. Config is
+  read from `TURN_CLOUDFLARE_APP_ID` / `TURN_CLOUDFLARE_APP_TOKEN` on the
+  server and served to clients as short-lived credentials.
 - Web client: the standalone server now serves `src/renderer/` over HTTP on
   the same port as the WebSocket signaling endpoint, so players can join
   from any browser without installing the desktop app.
@@ -25,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Voice chat: remote audio was silent on macOS after the user granted the
+  mic permission mid-session. Existing peer connections are now renegotiated
+  with the newly available input track instead of staying muted.
+- Voice chat: peers who joined as listeners and were later promoted to
+  speakers ended up with a half-open mesh. The mesh is now rebuilt on role
+  change so every speaker has a connection to every other speaker.
+- Voice chat: assorted web-client edge cases — races between TURN credential
+  refresh and the first offer/answer, and a Docker image that was missing
+  `turn.js` in the copied build output.
 - Voice chat: audio doubling when the Storyteller opened a whisper with a
   player. Peer connections are now keyed per remote peer instead of per
   (channel, peer), so a shared whisper and table channel no longer produce

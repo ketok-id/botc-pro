@@ -244,12 +244,33 @@
       this.peers.set(peerId, { pc, audioEl, peerId, signalingChannelId });
 
       // Attach our mic if we can speak to this peer on ANY shared channel.
-      if (this.localStream && this._canSpeakTo(peerId)) {
+      const canSpeak = this.localStream && this._canSpeakTo(peerId);
+      if (canSpeak) {
         for (const t of this.localStream.getAudioTracks()) pc.addTrack(t, this.localStream);
+      }
+      // Always declare a recv audio transceiver. Without this, listener-only
+      // peers negotiate an SDP with no recv m-line on Safari/WebKit (the
+      // legacy `offerToReceiveAudio` flag is unreliable there), so remote
+      // audio never flows.
+      if (!canSpeak) {
+        try { pc.addTransceiver('audio', { direction: 'recvonly' }); } catch {}
       }
 
       pc.ontrack = (ev) => {
-        audioEl.srcObject = ev.streams[0];
+        // `ev.streams[0]` is empty in some unified-plan paths (notably Safari);
+        // fall back to wrapping the raw track.
+        const stream = ev.streams && ev.streams[0]
+          ? ev.streams[0]
+          : new MediaStream([ev.track]);
+        audioEl.srcObject = stream;
+        // Autoplay policies on macOS Chrome/Safari block playback on audio
+        // elements appended after the initial user gesture. The "Enable mic"
+        // click counts as a gesture, so kicking .play() here is allowed — and
+        // is what unsticks previously-silent remote streams.
+        const p = audioEl.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(err => console.warn('voice audio play blocked', err));
+        }
       };
       pc.onicecandidate = (ev) => {
         if (ev.candidate) {
@@ -263,7 +284,10 @@
       };
 
       if (initiator) {
-        const offer = await pc.createOffer({ offerToReceiveAudio: true });
+        // The recvonly transceiver (when listener-only) or the sent track
+        // (when speaker) already defines the m-line; no legacy offer options
+        // needed.
+        const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         this.client.send({ t: 'voice_signal', to: peerId, channelId: signalingChannelId, sdp: pc.localDescription });
       }

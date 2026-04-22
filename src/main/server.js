@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const { nanoid, customAlphabet } = require('nanoid');
 const { C2S, S2C, PROTOCOL_VERSION, PHASES } = require('../shared/protocol');
 const engine = require('../shared/game-engine');
+const turn = require('./turn');
 
 // Static files served at `/` when a webRoot is provided. Limited to the file
 // types the renderer actually ships so we don't accidentally expose anything
@@ -119,6 +120,20 @@ function startServer({ port = 0, bind = '0.0.0.0', webRoot = null } = {}) {
       clients.set(session.clientId, session);
 
       send(ws, { t: S2C.WELCOME, clientId: session.clientId, version: PROTOCOL_VERSION });
+
+      // If Cloudflare Realtime TURN is configured, mint ephemeral creds and
+      // push them to the client. Fire-and-forget — a failure here just means
+      // the client falls back to public STUN, which still works on friendly
+      // NAT / same-LAN setups.
+      if (turn.isConfigured()) {
+        turn.getIceServers()
+          .then(iceServers => {
+            if (iceServers && ws.readyState === ws.OPEN) {
+              send(ws, { t: S2C.VOICE_ICE, iceServers });
+            }
+          })
+          .catch(err => console.warn('[botc-pro] turn mint error:', err.message));
+      }
 
       ws.on('message', (buf) => {
         let msg;

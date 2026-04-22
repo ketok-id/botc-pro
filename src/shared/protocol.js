@@ -33,6 +33,7 @@ const S2C = {
   VOICE_CHANNELS:   'voice_channels',// { channels:{id:{id,label,speakers,listeners}}, mine:{channels,roleInChannel} }
   VOICE_SIGNAL:     'voice_signal',  // { from, channelId, sdp? | ice? }
   VOICE_MIC:        'voice_mic',     // { from, channelId, talking }
+  VOICE_ICE:        'voice_ice',     // { iceServers } — optional TURN config pushed to client
 };
 
 const PHASES = {

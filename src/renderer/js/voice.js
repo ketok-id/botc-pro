@@ -43,6 +43,7 @@
       this.client.addEventListener('voicechannels', (ev) => this._onChannels(ev.detail));
       this.client.addEventListener('voicesignal',   (ev) => this._onSignal(ev.detail));
       this.client.addEventListener('voicemic',      (ev) => this._onMic(ev.detail));
+      this.client.addEventListener('voiceice',      (ev) => this._onIce(ev.detail));
       this.client.addEventListener('close',         () => this.shutdown());
 
       this._wirePtt();
@@ -352,6 +353,18 @@
       }
     }
 
+    // Server-pushed ICE config (typically Cloudflare Realtime TURN). Replaces
+    // the default public-STUN list so clients behind symmetric NAT can relay.
+    // Existing peer connections keep their old config — only new/rebuilt PCs
+    // pick up the change. That's fine: reconcile rebuilds on any channel
+    // change, and no TURN is needed until a peer actually fails to connect
+    // via the current config.
+    _onIce({ iceServers }) {
+      if (Array.isArray(iceServers) && iceServers.length) {
+        RTC_CONFIG.iceServers = iceServers;
+      }
+    }
+
     _onMic({ from, channelId, talking }) {
       const key = `${channelId}::${from}`;
       this.talkingRemote.set(key, !!talking);
@@ -379,6 +392,7 @@
       if (msg?.t === 'voice_channels') client.dispatchEvent(new CustomEvent('voicechannels', { detail: msg }));
       else if (msg?.t === 'voice_signal') client.dispatchEvent(new CustomEvent('voicesignal', { detail: msg }));
       else if (msg?.t === 'voice_mic') client.dispatchEvent(new CustomEvent('voicemic', { detail: msg }));
+      else if (msg?.t === 'voice_ice') client.dispatchEvent(new CustomEvent('voiceice', { detail: msg }));
     };
   }
 

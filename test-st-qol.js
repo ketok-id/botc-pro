@@ -145,4 +145,50 @@ assert(rhPlacementsCorrect === ftGames, `Red Herring placed on a Good player exa
   assert(info && /\bis the\b/i.test(info.text), 'Washerwoman gets info without targets');
 }
 
+// 7. castVote: alive player can vote yes/no, votes are stored, a re-cast
+//    replaces the previous vote. Regresses against engine-level breakage of
+//    the nomination/voting flow (issue #4).
+{
+  const g = newGameWith(5);
+  engine.startGame(g);
+  // Jump straight to day 1 so nominations are legal without running night flow.
+  g.phase = 'day';
+  g.dayNumber = 1;
+  const living = g.players.filter(p => !p.isSt && p.alive);
+  const [nor, nee, voter] = living;
+  engine.openNomination(g, nor.id, nee.id);
+  assert(g.currentNomination && g.currentNomination.nominee === nee.id, 'nomination opens');
+
+  engine.castVote(g, voter.id, true);
+  assert(g.currentNomination.votes.length === 1 && g.currentNomination.votes[0].yes === true,
+    'alive player can cast a YES vote');
+
+  engine.castVote(g, voter.id, false);
+  assert(g.currentNomination.votes.length === 1 && g.currentNomination.votes[0].yes === false,
+    're-casting replaces the previous vote rather than stacking');
+}
+
+// 8. Web-client regression: no inline event handlers in renderer JS.
+//    The index.html CSP is `script-src 'self'` (no 'unsafe-inline'), so any
+//    `onclick="..."`-style attribute in a template string silently fails in
+//    the browser. This is what broke the vote buttons in issue #4 — nomination
+//    used addEventListener and worked, voting used inline onclick and didn't.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const rendererJsDir = path.join(__dirname, 'src', 'renderer', 'js');
+  const files = fs.readdirSync(rendererJsDir).filter(f => f.endsWith('.js'));
+  // Match HTML-style inline handlers: onclick=, onchange=, onsubmit=, etc.
+  // Look inside single/double/backtick strings so plain `el.onclick = fn`
+  // assignments (which are CSP-safe) don't trip the check.
+  const inlineHandlerRe = /["'`][^"'`]*\bon[a-z]+\s*=\s*["'][^"']*["'][^"'`]*["'`]/;
+  const offenders = [];
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(rendererJsDir, f), 'utf8');
+    if (inlineHandlerRe.test(src)) offenders.push(f);
+  }
+  assert(offenders.length === 0,
+    `renderer JS contains no inline onX="..." handlers (CSP blocks them); offenders: ${offenders.join(', ') || 'none'}`);
+}
+
 console.log('\nDone.');

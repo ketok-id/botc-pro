@@ -268,6 +268,13 @@
       const votesYes = state.currentNomination.votes.filter(v => v.yes).length;
       center.style.pointerEvents = 'auto';
       center.innerHTML = nominationWidget(state, me, nor, nee, votesYes);
+      // Bind vote buttons programmatically — inline `onclick=` is blocked by
+      // the index.html Content-Security-Policy (`script-src 'self'`), so the
+      // buttons would silently do nothing on the web client.
+      const yesBtn = center.querySelector('[data-vote="yes"]');
+      const noBtn = center.querySelector('[data-vote="no"]');
+      if (yesBtn) yesBtn.addEventListener('click', () => app.client.playerAction('vote', { yes: true }));
+      if (noBtn) noBtn.addEventListener('click', () => app.client.playerAction('vote', { yes: false }));
     } else if (state.phase === 'day') {
       center.innerHTML = `<div class="muted">Day ${state.dayNumber} · discuss, then nominate</div>`;
     } else if (state.phase === 'night' || state.phase === 'first_night') {
@@ -290,13 +297,11 @@
         <div class="votes">${yesCount} vote${yesCount===1?'':'s'} · your vote: ${have}</div>
         ${canVote && !me.isSt ? `
           <div class="vote-actions">
-            <button onclick="window._vote(true)">Vote YES</button>
-            <button onclick="window._vote(false)">Vote NO</button>
+            <button data-vote="yes">Vote YES</button>
+            <button data-vote="no">Vote NO</button>
           </div>` : ''}
       </div>`;
   }
-
-  window._vote = (yes) => app.client.playerAction('vote', { yes });
 
   function onSeatClick(state, p) {
     const me = state.players.find(pp => pp.id === app.client.clientId);

@@ -500,6 +500,28 @@ function startServer({ port = 0, bind = '0.0.0.0', webRoot = null } = {}) {
           }
           break;
         }
+        case 'kick_player': {
+          // Remove a seated player from the game. Useful when a player has
+          // dropped their socket (tab closed, bad connection) and won't
+          // reconnect — handleDisconnect keeps their record for resume, so
+          // without an explicit kick the seat stays occupied indefinitely.
+          const targetId = payload.playerId;
+          if (!targetId) throw new Error('playerId required');
+          if (targetId === g.storytellerId) throw new Error('Cannot kick the Storyteller');
+          if (!g.players.find(pp => pp.id === targetId)) throw new Error('Unknown player');
+          const targetEntry = room.clients.get(targetId);
+          if (targetEntry) {
+            send(targetEntry.ws, {
+              t: S2C.ROOM_CLOSED,
+              reason: 'You were removed from the game by the Storyteller.',
+            });
+          }
+          const targetSession = clients.get(targetId);
+          if (targetSession) targetSession.roomCode = null;
+          room.clients.delete(targetId);
+          engine.removePlayer(g, targetId);
+          break;
+        }
         case 'deliver_evil_team_info': {
           // First-night mass delivery to the whole evil team.
           const deliveries = engine.generateEvilTeamInfo(g);

@@ -145,4 +145,48 @@ assert(rhPlacementsCorrect === ftGames, `Red Herring placed on a Good player exa
   assert(info && /\bis the\b/i.test(info.text), 'Washerwoman gets info without targets');
 }
 
+// 7. removePlayer: seat vacates and remaining players are re-numbered. This
+//    is the core of the kick/exit flow for issue #3 — the seated icon must
+//    actually disappear, not just go stale.
+{
+  const g = newGameWith(5);
+  const beforeSeats = g.players.filter(p => !p.isSt).map(p => ({ id: p.id, seat: p.seat }));
+  assert(beforeSeats.length === 5 && beforeSeats[2].id === 'p2' && beforeSeats[2].seat === 2,
+    'starting layout has 5 players in seats 0..4');
+  engine.removePlayer(g, 'p2');
+  const afterSeats = g.players.filter(p => !p.isSt).map(p => ({ id: p.id, seat: p.seat }));
+  assert(afterSeats.length === 4, 'kicked player is gone from game.players');
+  assert(!afterSeats.find(s => s.id === 'p2'), 'kicked player id is absent');
+  assert(afterSeats.every((s, i) => s.seat === i), 'remaining players are re-seated 0..n-1');
+}
+
+// 8. removePlayer mid-nomination: if the nominator or nominee leaves, the
+//    active nomination is cancelled so the game doesn't hang waiting for a
+//    vote against a missing seat.
+{
+  const g = newGameWith(5);
+  engine.startGame(g);
+  g.phase = 'day';
+  g.dayNumber = 1;
+  const [nor, nee] = g.players.filter(p => !p.isSt);
+  engine.openNomination(g, nor.id, nee.id);
+  assert(g.currentNomination, 'nomination is open');
+  engine.removePlayer(g, nee.id);
+  assert(g.currentNomination === null, 'nomination is cancelled when the nominee leaves');
+  assert(g.nominations.length === 0, 'cancelled nomination is removed from history');
+}
+
+// 9. removePlayer when on-the-block: onTheBlock is cleared so endDay doesn't
+//    try to execute a seat that no longer exists.
+{
+  const g = newGameWith(5);
+  engine.startGame(g);
+  g.phase = 'day';
+  g.dayNumber = 1;
+  const seated = g.players.filter(p => !p.isSt);
+  g.onTheBlock = seated[3].id;
+  engine.removePlayer(g, seated[3].id);
+  assert(g.onTheBlock === null, 'onTheBlock is cleared when that player leaves');
+}
+
 console.log('\nDone.');

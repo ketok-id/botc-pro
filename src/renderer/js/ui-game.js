@@ -623,6 +623,15 @@
       app.client.st('auto_info', { playerId: p.id });
     });
 
+    const kickBtn = button('Kick');
+    kickBtn.title = `Remove ${p.name} from the game and free their seat. Use this when a player has left or can't reconnect.`;
+    kickBtn.addEventListener('click', () => {
+      if (!window.confirm(`Kick ${p.name} from the game? Their seat will be freed and they will be disconnected.`)) return;
+      app.client.st('kick_player', { playerId: p.id });
+      selectedSeatId = null;
+      reminderPickerFor = null;
+    });
+
     const closeBtn = button('×');
     closeBtn.title = 'Deselect seat';
     closeBtn.addEventListener('click', () => { selectedSeatId = null; reminderPickerFor = null; render(); });
@@ -633,6 +642,7 @@
     wrap.appendChild(reminderBtn);
     wrap.appendChild(autoBtn);
     wrap.appendChild(deliverBtn);
+    wrap.appendChild(kickBtn);
     wrap.appendChild(closeBtn);
 
     if (reminderPickerFor === p.id) {

@@ -61,12 +61,31 @@ function addPlayer(game, { id, name, isSt = false }) {
 }
 
 function removePlayer(game, id) {
+  const departing = game.players.find(p => p.id === id);
   game.players = game.players.filter(p => p.id !== id);
   if (game.storytellerId === id) game.storytellerId = null;
   // Re-seat remaining non-ST players
   let seat = 0;
   for (const p of game.players) {
     if (!p.isSt) p.seat = seat++;
+  }
+  // Clean up any in-flight game state that referenced the removed player,
+  // otherwise the game can get wedged (a nomination with no nominee, votes
+  // cast by a ghost voter, an execution pointer to a missing seat).
+  if (departing && !departing.isSt) {
+    const cur = game.currentNomination;
+    if (cur && (cur.nominator === id || cur.nominee === id)) {
+      game.nominations = game.nominations.filter(n => n !== cur);
+      game.currentNomination = null;
+      logPublic(game, `Nomination cancelled — ${departing.name} left the game.`);
+    }
+    for (const n of game.nominations) {
+      if (!n.resolved) n.votes = n.votes.filter(v => v.voter !== id);
+    }
+    if (game.onTheBlock === id) {
+      game.onTheBlock = null;
+      logPublic(game, `${departing.name} is no longer on the block (left the game).`);
+    }
   }
   return game;
 }

@@ -32,10 +32,10 @@
     btn.classList.toggle('hidden', !inRoom);
     if (!inRoom) return;
     const isSt = !!app.client.isSt;
-    btn.textContent = isSt ? 'Close room' : 'Leave room';
+    btn.textContent = isSt ? 'Close room' : 'Leave game';
     btn.title = isSt
       ? 'Close this room — kicks every player out and deletes the game.'
-      : 'Leave this room and return to the lobby.';
+      : 'Leave the game and free your seat. You can rejoin from the lobby.';
   }
 
   $('#btnLeaveRoom')?.addEventListener('click', () => {
@@ -44,7 +44,7 @@
     const ok = window.confirm(
       isSt
         ? 'Close this room? Every player will be kicked out and the game state will be deleted.'
-        : 'Leave this room and return to the lobby?'
+        : 'Leave the game? Your seat will be freed for someone else.'
     );
     if (!ok) return;
     if (isSt) app.client.closeRoom();
